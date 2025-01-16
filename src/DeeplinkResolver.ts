@@ -6,9 +6,14 @@ import axios from 'axios';
 const RESOLVER_API =
   'https://raw.githubusercontent.com/ONDC-Official/deeplink-resolver-storage/refs/heads/master/deep-link-payload/json';
 
+type DynamicResolver = {
+  path: string;
+  resolver: (() => Promise<string>) | string;
+};
 export class DeeplinkResolver {
   private staticData: Record<string, any>;
   private usecaseTemplate: Record<string, any>;
+  private dynamicResolvers: DynamicResolver[] = [];
 
   constructor(
     yamlPath: string,
@@ -70,8 +75,44 @@ export class DeeplinkResolver {
     return obj;
   }
 
-  public async resolve(): Promise<Record<string, any>> {
+  public async staticResolve(): Promise<Record<string, any>> {
     await this.fetchUsecaseTemplate();
     return this.replaceStaticValues(this.usecaseTemplate);
+  }
+  public addDynamicResolver(
+    path: string,
+    resolver: (() => Promise<string>) | string,
+  ) {
+    this.dynamicResolvers.push({path, resolver});
+  }
+  public async dynamicResolve(): Promise<Record<string, any>> {
+    await this.fetchUsecaseTemplate();
+    const resolvedTemplate = {...this.usecaseTemplate};
+
+    for (const {path, resolver} of this.dynamicResolvers) {
+      let value: string;
+
+      if (typeof resolver === 'string') {
+        // If resolver is an API URL
+        const response = await axios.get(resolver);
+        value = response.data;
+      } else {
+        // If resolver is a function
+        value = await resolver();
+      }
+
+      // Navigate and update the nested path
+      const pathParts = path.split('.');
+      let current = resolvedTemplate;
+
+      for (let i = 0; i < pathParts.length - 1; i++) {
+        current = current[pathParts[i]];
+      }
+
+      current[pathParts[pathParts.length - 1]] = value;
+    }
+
+    // Apply static resolvers after dynamic ones
+    return this.replaceStaticValues(resolvedTemplate);
   }
 }

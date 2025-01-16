@@ -2,6 +2,7 @@ import {DeeplinkResolver} from './DeeplinkResolver';
 import axios from 'axios';
 import * as fs from 'fs';
 import * as yaml from 'js-yaml';
+import * as path from 'path';
 
 jest.mock('axios');
 jest.mock('fs');
@@ -61,6 +62,7 @@ const expectedResolvedData = {
 };
 
 describe('DeeplinkResolver', () => {
+  const testConfigPath = path.join(__dirname, 'mock/test_config.yaml');
   beforeEach(() => {
     jest.clearAllMocks();
     (yaml.load as jest.Mock).mockReturnValue(mockYamlData);
@@ -104,13 +106,20 @@ describe('DeeplinkResolver', () => {
 
   it('should handle API errors', async () => {
     (axios.get as jest.Mock).mockRejectedValue(new Error('API error'));
-    const resolver = new DeeplinkResolver(
-      './mock/test_config.yaml',
-      'impossible-value',
-    );
+    const resolver = new DeeplinkResolver(testConfigPath, 'impossible-value');
 
     await expect(resolver.resolve()).rejects.toThrow(
       'Error fetching usecase template: API error',
     );
+  });
+
+  it('should load and parse real YAML file', async () => {
+    const resolver = new DeeplinkResolver(testConfigPath, '7456d7b1-e719-45');
+    const result = await resolver.resolve();
+
+    expect(result).toBeDefined();
+    expect(result.context).toBeDefined();
+    expect(result.context.bap_id).toBe('test-bap');
+    expect(result.context.bap_uri).toBe('https://test-bap.com');
   });
 });
