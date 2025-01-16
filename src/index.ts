@@ -1,0 +1,1 @@
+export {DeeplinkResolver} from './DeeplinkResolver';
