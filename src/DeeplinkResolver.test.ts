@@ -8,118 +8,143 @@ jest.mock('axios');
 jest.mock('fs');
 jest.mock('js-yaml');
 
-const mockYamlData = {
-  'context.bap_id': 'test',
-  'context.bap_uri': 'something-something',
-};
+describe('DeeplinkResolver Unit Tests', () => {
+  const mockYamlData = {
+    'context.bap_id': 'test-bap',
+    'context.bap_uri': 'https://test-bap.com',
+    'context.domain': 'retail',
+  };
 
-const mockUsecaseTemplate = {
-  context: {
-    ttl: 'PT30S',
-    city: 'std:011',
-    action: 'search',
-    bap_id: '{{context.bap_id}}',
-    domain: 'ONDC:RET10',
-    bap_uri: '{{context.bap_uri}}',
-    country: 'IND',
-    timestamp: '{{context.timestamp}}',
-    message_id: '{{context.message_id}}',
-    core_version: '1.2.0',
-    transaction_id: '{{context.transaction_id}}',
-  },
-  message: {
-    intent: {
-      payment: {
-        '@ondc/org/buyer_app_finder_fee_type': 'percent',
-        '@ondc/org/buyer_app_finder_fee_amount': 5,
+  const mockUsecaseTemplate = {
+    context: {
+      bap_id: '{{context.bap_id}}',
+      bap_uri: '{{context.bap_uri}}',
+      domain: '{{context.domain}}',
+    },
+    message: {
+      intent: {
+        category: {
+          id: 'fruits',
+        },
       },
     },
-  },
-};
+  };
 
-const expectedResolvedData = {
-  context: {
-    ttl: 'PT30S',
-    city: 'std:011',
-    action: 'search',
-    bap_id: 'test',
-    domain: 'ONDC:RET10',
-    bap_uri: 'something-something',
-    country: 'IND',
-    timestamp: '{{context.timestamp}}',
-    message_id: '{{context.message_id}}',
-    core_version: '1.2.0',
-    transaction_id: '{{context.transaction_id}}',
-  },
-  message: {
-    intent: {
-      payment: {
-        '@ondc/org/buyer_app_finder_fee_type': 'percent',
-        '@ondc/org/buyer_app_finder_fee_amount': 5,
-      },
-    },
-  },
-};
-
-describe('DeeplinkResolver', () => {
-  const testConfigPath = path.join(__dirname, 'mock/test_config.yaml');
   beforeEach(() => {
     jest.clearAllMocks();
     (yaml.load as jest.Mock).mockReturnValue(mockYamlData);
     (axios.get as jest.Mock).mockResolvedValue({data: mockUsecaseTemplate});
   });
 
-  it('should load YAML file correctly', async () => {
-    const resolver = new DeeplinkResolver(
-      './mock/test_config.yaml',
-      '7456d7b1-e719-45',
-    );
-    expect(fs.readFileSync).toHaveBeenCalledWith(
-      './mock/test_config.yaml',
-      'utf8',
-    );
+  it('should initialize with yaml config', () => {
+    const resolver = new DeeplinkResolver('./config.yaml', 'test-usecase');
+    expect(fs.readFileSync).toHaveBeenCalledWith('./config.yaml', 'utf8');
     expect(yaml.load).toHaveBeenCalled();
   });
 
-  it('should fetch usecase template successfully', async () => {
-    const resolver = new DeeplinkResolver(
-      './mock/test_config.yaml',
-      '7456d7b1-e719-45',
-    );
-    const result = await resolver.resolve();
+  it('should resolve static values correctly', async () => {
+    const resolver = new DeeplinkResolver('./config.yaml', 'test-usecase');
+    const result = await resolver.staticResolve();
 
-    expect(axios.get).toHaveBeenCalledWith(
-      'https://raw.githubusercontent.com/ONDC-Official/deeplink-resolver-storage/refs/heads/master/deep-link-payload/json/7456d7b1-e719-45.json',
-    );
-    expect(result).toEqual(expectedResolvedData);
+    expect(result.context).toEqual({
+      bap_id: 'test-bap',
+      bap_uri: 'https://test-bap.com',
+      domain: 'retail',
+    });
   });
 
-  it('should handle YAML loading errors', () => {
-    (fs.readFileSync as jest.Mock).mockImplementation(() => {
-      throw new Error('File not found');
+  it('should handle dynamic resolvers with functions', async () => {
+    const resolver = new DeeplinkResolver('./config.yaml', 'test-usecase');
+    const mockTimestamp = '2023-01-01T00:00:00.000Z';
+
+    resolver.addDynamicResolver('context.timestamp', async () => mockTimestamp);
+
+    const result = await resolver.dynamicResolve();
+    expect(result.context.timestamp).toBe(mockTimestamp);
+  });
+
+  it('should handle dynamic resolvers with API URLs', async () => {
+    const resolver = new DeeplinkResolver('./config.yaml', 'test-usecase');
+    const mockApiUrl = 'https://api.example.com/data';
+    const mockApiResponse = {data: 'test-data'};
+
+    (axios.get as jest.Mock).mockImplementation(url => {
+      if (url === mockApiUrl) {
+        return Promise.resolve({data: 'dynamic-value'});
+      }
+      return Promise.resolve({data: mockUsecaseTemplate});
     });
 
-    expect(() => {
-      new DeeplinkResolver('invalid/path.yaml', 'test-usecase');
-    }).toThrow('Error loading YAML file: File not found');
+    resolver.addDynamicResolver('message.intent.category.id', mockApiUrl);
+
+    const result = await resolver.dynamicResolve();
+    expect(result.message.intent.category.id).toBe('dynamic-value');
+  });
+});
+
+describe('DeeplinkResolver Integration Tests', () => {
+  const realConfigPath = path.join(__dirname, '../config/real-config.yaml');
+
+  it('should handle complete resolution flow', async () => {
+    const resolver = new DeeplinkResolver(realConfigPath, 'retail-search');
+
+    // Mock the template response to avoid recursion
+    (axios.get as jest.Mock).mockImplementation(url => {
+      return Promise.resolve({
+        data: {
+          context: {
+            timestamp: '',
+            transaction_id: '',
+            bap_id: '{{context.bap_id}}',
+          },
+        },
+      });
+    });
+
+    resolver.addDynamicResolver(
+      'context.timestamp',
+      async () => '2023-01-01T00:00:00Z',
+    );
+    resolver.addDynamicResolver(
+      'context.transaction_id',
+      'https://api.example.com/transaction',
+    );
+
+    const result = await resolver.dynamicResolve();
+    expect(result).toHaveProperty('context');
   });
 
-  it('should handle API errors', async () => {
-    (axios.get as jest.Mock).mockRejectedValue(new Error('API error'));
-    const resolver = new DeeplinkResolver(testConfigPath, 'impossible-value');
+  it('should handle error cases gracefully', async () => {
+    (axios.get as jest.Mock).mockRejectedValue(new Error('Network error'));
 
-    await expect(resolver.resolve()).rejects.toThrow(
-      'Error fetching usecase template: API error',
+    const resolver = new DeeplinkResolver(realConfigPath, 'invalid-usecase');
+
+    await expect(resolver.staticResolve()).rejects.toThrow(
+      'Error fetching usecase template',
     );
   });
 
-  it('should load and parse real YAML file', async () => {
-    const resolver = new DeeplinkResolver(testConfigPath, '7456d7b1-e719-45');
-    const result = await resolver.resolve();
+  it('should combine static and dynamic resolvers correctly', async () => {
+    const resolver = new DeeplinkResolver('./config.yaml', 'test-usecase');
 
-    expect(result).toBeDefined();
-    expect(result.context).toBeDefined();
+    // Reset axios mock for this test
+    (axios.get as jest.Mock).mockImplementation(() =>
+      Promise.resolve({
+        data: {
+          context: {bap_id: '{{context.bap_id}}'},
+          message: {intent: {category: {id: 'placeholder'}}},
+        },
+      }),
+    );
+
+    const mockDynamicValue = 'dynamic-test-value';
+    resolver.addDynamicResolver(
+      'message.intent.category.id',
+      async () => mockDynamicValue,
+    );
+
+    const result = await resolver.dynamicResolve();
     expect(result.context.bap_id).toBe('test-bap');
-    expect(result.context.bap_uri).toBe('https://test-bap.com');
+    expect(result.message.intent.category.id).toBe(mockDynamicValue);
   });
 });

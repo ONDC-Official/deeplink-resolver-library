@@ -24,9 +24,7 @@ export class DeeplinkResolver {
 
   private loadYamlFile(path: string): Record<string, any> {
     try {
-      console.log('OPENING FILE at path:::', path);
       const fileContents = fs.readFileSync(path, 'utf8');
-      console.log('FILE CONTENTS :::', fileContents);
       return yaml.load(fileContents) as Record<string, any>;
     } catch (error) {
       throw new Error(`Error loading YAML file: ${error.message}`);
