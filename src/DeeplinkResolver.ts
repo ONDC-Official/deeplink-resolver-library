@@ -2,9 +2,7 @@ import * as yaml from 'js-yaml';
 import * as fs from 'fs';
 import axios from 'axios';
 
-// const RESOLVER_API = 'https://deeplink.resolver.ondc.org/api/resolver';
-const RESOLVER_API =
-  'https://raw.githubusercontent.com/ONDC-Official/deeplink-resolver-storage/refs/heads/master/deep-link-payload/json';
+const RESOLVER_API = 'https://deeplink.resolver.ondc.org/api/resolver';
 
 type DynamicResolver = {
   path: string;

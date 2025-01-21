@@ -1,1 +1,1 @@
-export {DeeplinkResolver} from './DeeplinkResolver';
+export * from './DeeplinkResolver';
