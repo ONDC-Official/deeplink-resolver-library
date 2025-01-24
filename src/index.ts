@@ -1,1 +1,1 @@
-export * from './DeeplinkResolver';
+export * from './DeeplinkConsumer';

@@ -1,150 +1,123 @@
-import {DeeplinkResolver} from './DeeplinkResolver';
+import {DeeplinkResolver} from './DeeplinkConsumer';
 import axios from 'axios';
-import * as fs from 'fs';
-import * as yaml from 'js-yaml';
-import * as path from 'path';
 
 jest.mock('axios');
-jest.mock('fs');
-jest.mock('js-yaml');
 
-describe('DeeplinkResolver Unit Tests', () => {
-  const mockYamlData = {
-    'context.bap_id': 'test-bap',
-    'context.bap_uri': 'https://test-bap.com',
-    'context.domain': 'retail',
-  };
-
-  const mockUsecaseTemplate = {
-    context: {
-      bap_id: '{{context.bap_id}}',
-      bap_uri: '{{context.bap_uri}}',
-      domain: '{{context.domain}}',
-    },
-    message: {
-      intent: {
-        category: {
-          id: 'fruits',
-        },
-      },
-    },
-  };
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    (yaml.load as jest.Mock).mockReturnValue(mockYamlData);
-    (axios.get as jest.Mock).mockResolvedValue({data: mockUsecaseTemplate});
-  });
-
-  it('should initialize with yaml config', () => {
-    const resolver = new DeeplinkResolver('./config.yaml', 'test-usecase');
-    expect(fs.readFileSync).toHaveBeenCalledWith('./config.yaml', 'utf8');
-    expect(yaml.load).toHaveBeenCalled();
-  });
-
-  it('should resolve static values correctly', async () => {
-    const resolver = new DeeplinkResolver('./config.yaml', 'test-usecase');
-    const result = await resolver.staticResolve();
-
-    expect(result.context).toEqual({
-      bap_id: 'test-bap',
-      bap_uri: 'https://test-bap.com',
-      domain: 'retail',
-    });
-  });
-
-  it('should handle dynamic resolvers with functions', async () => {
-    const resolver = new DeeplinkResolver('./config.yaml', 'test-usecase');
-    const mockTimestamp = '2023-01-01T00:00:00.000Z';
-
-    resolver.addDynamicResolver('context.timestamp', async () => mockTimestamp);
-
-    const result = await resolver.dynamicResolve();
-    expect(result.context.timestamp).toBe(mockTimestamp);
-  });
-
-  it('should handle dynamic resolvers with API URLs', async () => {
-    const resolver = new DeeplinkResolver('./config.yaml', 'test-usecase');
-    const mockApiUrl = 'https://api.example.com/data';
-    const mockApiResponse = {data: 'test-data'};
-
-    (axios.get as jest.Mock).mockImplementation(url => {
-      if (url === mockApiUrl) {
-        return Promise.resolve({data: 'dynamic-value'});
-      }
-      return Promise.resolve({data: mockUsecaseTemplate});
+describe('DeeplinkResolver', () => {
+  // Unit Tests
+  describe('Unit Tests', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
     });
 
-    resolver.addDynamicResolver('message.intent.category.id', mockApiUrl);
+    it('should create an instance with deeplink', () => {
+      const deeplink = 'beckn://resolver.beckn.org.ret.mock/12345';
+      const resolver = new DeeplinkResolver(deeplink);
+      expect(resolver).toBeInstanceOf(DeeplinkResolver);
+    });
 
-    const result = await resolver.dynamicResolve();
-    expect(result.message.intent.category.id).toBe('dynamic-value');
-  });
-});
-
-describe('DeeplinkResolver Integration Tests', () => {
-  const realConfigPath = path.join(__dirname, '../config/real-config.yaml');
-
-  it('should handle complete resolution flow', async () => {
-    const resolver = new DeeplinkResolver(realConfigPath, 'retail-search');
-
-    // Mock the template response to avoid recursion
-    (axios.get as jest.Mock).mockImplementation(url => {
-      return Promise.resolve({
-        data: {
+    it('should fetch usecase template successfully', async () => {
+      const mockTemplate = {
+        type: 'object',
+        properties: {
           context: {
-            timestamp: '',
-            transaction_id: '',
-            bap_id: '{{context.bap_id}}',
+            type: 'object',
           },
         },
+      };
+
+      (axios.get as jest.Mock).mockResolvedValueOnce({
+        status: 200,
+        data: mockTemplate,
       });
+
+      const deeplink = 'beckn://resolver.beckn.org.ret.mock/12345';
+      const resolver = new DeeplinkResolver(deeplink);
+      const result = await resolver.fetchUsecase();
+
+      expect(axios.get).toHaveBeenCalledWith(
+        'https://resolver.beckn.org/api/resolver/12345',
+      );
+      expect(result).toEqual(mockTemplate);
     });
 
-    resolver.addDynamicResolver(
-      'context.timestamp',
-      async () => '2023-01-01T00:00:00Z',
-    );
-    resolver.addDynamicResolver(
-      'context.transaction_id',
-      'https://api.example.com/transaction',
-    );
+    it('should throw error when API returns non-200 status', async () => {
+      (axios.get as jest.Mock).mockResolvedValueOnce({
+        status: 404,
+      });
 
-    const result = await resolver.dynamicResolve();
-    expect(result).toHaveProperty('context');
+      const deeplink = 'beckn://resolver.beckn.org.ret.mock/12345';
+      const resolver = new DeeplinkResolver(deeplink);
+
+      await expect(resolver.fetchUsecase()).rejects.toThrow(
+        'Error fetching usecase template',
+      );
+    });
+
+    it('should correctly parse complex deeplinks', async () => {
+      const mockTemplate = {type: 'object'};
+      (axios.get as jest.Mock).mockResolvedValueOnce({
+        status: 200,
+        data: mockTemplate,
+      });
+
+      const deeplink = 'beckn://custom.resolver.beckn.org.ret.mock/abc-123-xyz';
+      const resolver = new DeeplinkResolver(deeplink);
+      await resolver.fetchUsecase();
+
+      expect(axios.get).toHaveBeenCalledWith(
+        'https://custom.resolver.beckn.org/api/resolver/abc-123-xyz',
+      );
+    });
   });
 
-  it('should handle error cases gracefully', async () => {
-    (axios.get as jest.Mock).mockRejectedValue(new Error('Network error'));
-
-    const resolver = new DeeplinkResolver(realConfigPath, 'invalid-usecase');
-
-    await expect(resolver.staticResolve()).rejects.toThrow(
-      'Error fetching usecase template',
-    );
-  });
-
-  it('should combine static and dynamic resolvers correctly', async () => {
-    const resolver = new DeeplinkResolver('./config.yaml', 'test-usecase');
-
-    // Reset axios mock for this test
-    (axios.get as jest.Mock).mockImplementation(() =>
-      Promise.resolve({
-        data: {
-          context: {bap_id: '{{context.bap_id}}'},
-          message: {intent: {category: {id: 'placeholder'}}},
+  // Integration Tests
+  describe('Integration Tests', () => {
+    it('should handle complete flow with real schema response', async () => {
+      const mockSchema = {
+        type: 'object',
+        properties: {
+          context: {
+            type: 'object',
+            properties: {
+              domain: {type: 'string'},
+              action: {type: 'string'},
+              version: {type: 'string'},
+            },
+          },
+          message: {
+            type: 'object',
+            properties: {
+              intent: {type: 'object'},
+            },
+          },
         },
-      }),
-    );
+      };
 
-    const mockDynamicValue = 'dynamic-test-value';
-    resolver.addDynamicResolver(
-      'message.intent.category.id',
-      async () => mockDynamicValue,
-    );
+      (axios.get as jest.Mock).mockResolvedValueOnce({
+        status: 200,
+        data: mockSchema,
+      });
 
-    const result = await resolver.dynamicResolve();
-    expect(result.context.bap_id).toBe('test-bap');
-    expect(result.message.intent.category.id).toBe(mockDynamicValue);
+      const deeplink = 'beckn://resolver.beckn.org.ret.mock/12345';
+      const resolver = new DeeplinkResolver(deeplink);
+      const result = await resolver.fetchUsecase();
+
+      expect(result).toEqual(mockSchema);
+      expect(result.type).toBe('object');
+      expect(result.properties?.context).toBeDefined();
+      expect(result.properties?.message).toBeDefined();
+    });
+
+    it('should handle network errors gracefully', async () => {
+      (axios.get as jest.Mock).mockRejectedValueOnce(
+        new Error('Network Error'),
+      );
+
+      const deeplink = 'beckn://resolver.beckn.org.ret.mock/12345';
+      const resolver = new DeeplinkResolver(deeplink);
+
+      await expect(resolver.fetchUsecase()).rejects.toThrow();
+    });
   });
 });
