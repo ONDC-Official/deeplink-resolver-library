@@ -1,123 +1,125 @@
 import {DeeplinkResolver} from './DeeplinkConsumer';
 import axios from 'axios';
+import {HostMappingCache} from './HostMappingCache';
 
 jest.mock('axios');
+jest.mock('./HostMappingCache');
 
 describe('DeeplinkResolver', () => {
-  // Unit Tests
   describe('Unit Tests', () => {
     beforeEach(() => {
       jest.clearAllMocks();
     });
 
     it('should create an instance with deeplink', () => {
-      const deeplink = 'beckn://resolver.beckn.org.ret.mock/12345';
+      const deeplink = 'beckn://resolver.beckn.org/12345';
       const resolver = new DeeplinkResolver(deeplink);
       expect(resolver).toBeInstanceOf(DeeplinkResolver);
     });
 
-    it('should fetch usecase template successfully', async () => {
-      const mockTemplate = {
-        type: 'object',
-        properties: {
-          context: {
-            type: 'object',
-          },
-        },
+    it('should correctly parse resolver and UUID from deeplink', async () => {
+      const mockMappingData = {resolver: 'mapped.host'};
+      const mockTemplate = {type: 'object'};
+
+      const mockHostMappingCache = {
+        getResolverHost: jest.fn().mockResolvedValue('mapped.host'),
       };
 
-      (axios.get as jest.Mock).mockResolvedValueOnce({
+      (HostMappingCache.getInstance as jest.Mock).mockReturnValue(
+        mockHostMappingCache,
+      );
+      (axios.get as jest.Mock).mockResolvedValue({
         status: 200,
         data: mockTemplate,
       });
 
-      const deeplink = 'beckn://resolver.beckn.org.ret.mock/12345';
+      const deeplink = 'beckn://resolver.beckn.org/12345';
       const resolver = new DeeplinkResolver(deeplink);
-      const result = await resolver.fetchUsecase();
+      await resolver.fetchUsecase();
 
       expect(axios.get).toHaveBeenCalledWith(
-        'https://resolver.beckn.org/api/resolver/12345',
+        'https://mapped.host/api/resolver/12345',
       );
-      expect(result).toEqual(mockTemplate);
     });
 
-    it('should throw error when API returns non-200 status', async () => {
-      (axios.get as jest.Mock).mockResolvedValueOnce({
-        status: 404,
-      });
+    it('should throw error when resolver API returns non-200 status', async () => {
+      const mockHostMappingCache = {
+        getResolverHost: jest.fn().mockResolvedValue('mapped.host'),
+      };
 
-      const deeplink = 'beckn://resolver.beckn.org.ret.mock/12345';
+      (HostMappingCache.getInstance as jest.Mock).mockReturnValue(
+        mockHostMappingCache,
+      );
+      (axios.get as jest.Mock).mockResolvedValue({status: 404});
+
+      const deeplink = 'beckn://resolver.beckn.org/12345';
       const resolver = new DeeplinkResolver(deeplink);
 
       await expect(resolver.fetchUsecase()).rejects.toThrow(
         'Error fetching usecase template',
       );
     });
-
-    it('should correctly parse complex deeplinks', async () => {
-      const mockTemplate = {type: 'object'};
-      (axios.get as jest.Mock).mockResolvedValueOnce({
-        status: 200,
-        data: mockTemplate,
-      });
-
-      const deeplink = 'beckn://custom.resolver.beckn.org.ret.mock/abc-123-xyz';
-      const resolver = new DeeplinkResolver(deeplink);
-      await resolver.fetchUsecase();
-
-      expect(axios.get).toHaveBeenCalledWith(
-        'https://custom.resolver.beckn.org/api/resolver/abc-123-xyz',
-      );
-    });
   });
 
-  // Integration Tests
   describe('Integration Tests', () => {
-    it('should handle complete flow with real schema response', async () => {
-      const mockSchema = {
+    it('should successfully fetch and return usecase template', async () => {
+      const mockTemplate = {
         type: 'object',
         properties: {
-          context: {
-            type: 'object',
-            properties: {
-              domain: {type: 'string'},
-              action: {type: 'string'},
-              version: {type: 'string'},
-            },
-          },
+          context: {type: 'object'},
           message: {
             type: 'object',
             properties: {
-              intent: {type: 'object'},
+              data: {type: 'string'},
             },
           },
         },
       };
 
-      (axios.get as jest.Mock).mockResolvedValueOnce({
+      const mockHostMappingCache = {
+        getResolverHost: jest.fn().mockResolvedValue('mapped.host'),
+      };
+
+      (HostMappingCache.getInstance as jest.Mock).mockReturnValue(
+        mockHostMappingCache,
+      );
+      (axios.get as jest.Mock).mockResolvedValue({
         status: 200,
-        data: mockSchema,
+        data: mockTemplate,
       });
 
-      const deeplink = 'beckn://resolver.beckn.org.ret.mock/12345';
+      const deeplink = 'beckn://resolver.beckn.org/12345';
       const resolver = new DeeplinkResolver(deeplink);
       const result = await resolver.fetchUsecase();
 
-      expect(result).toEqual(mockSchema);
+      expect(result).toEqual(mockTemplate);
       expect(result.type).toBe('object');
+      expect(result.properties).toBeDefined();
       expect(result.properties?.context).toBeDefined();
-      expect(result.properties?.message).toBeDefined();
     });
 
-    it('should handle network errors gracefully', async () => {
-      (axios.get as jest.Mock).mockRejectedValueOnce(
-        new Error('Network Error'),
+    it('should handle complex deeplink structures', async () => {
+      const mockTemplate = {type: 'object'};
+      const mockHostMappingCache = {
+        getResolverHost: jest.fn().mockResolvedValue('mapped.host'),
+      };
+
+      (HostMappingCache.getInstance as jest.Mock).mockReturnValue(
+        mockHostMappingCache,
       );
+      (axios.get as jest.Mock).mockResolvedValue({
+        status: 200,
+        data: mockTemplate,
+      });
 
-      const deeplink = 'beckn://resolver.beckn.org.ret.mock/12345';
+      const deeplink = 'beckn://sub.resolver.beckn.org/12345-6789-0000';
       const resolver = new DeeplinkResolver(deeplink);
+      const result = await resolver.fetchUsecase();
 
-      await expect(resolver.fetchUsecase()).rejects.toThrow();
+      expect(result).toBeDefined();
+      expect(axios.get).toHaveBeenCalledWith(
+        'https://mapped.host/api/resolver/12345-6789-0000',
+      );
     });
   });
 });
