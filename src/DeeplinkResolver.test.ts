@@ -1,7 +1,9 @@
 import {DeeplinkResolver} from './DeeplinkConsumer';
 import axios from 'axios';
+import {HostMappingCache} from './HostMappingCache';
 
 jest.mock('axios');
+jest.mock('./HostMappingCache');
 
 describe('DeeplinkResolver', () => {
   describe('Unit Tests', () => {
@@ -15,49 +17,40 @@ describe('DeeplinkResolver', () => {
       expect(resolver).toBeInstanceOf(DeeplinkResolver);
     });
 
-    it('should set mapping URL correctly', () => {
-      const newUrl = 'https://example.com/mapping';
-      DeeplinkResolver.setMappingUrl(newUrl);
-      expect(axios.get).not.toHaveBeenCalled();
-    });
+    it('should correctly parse resolver and UUID from deeplink', async () => {
+      const mockMappingData = {resolver: 'mapped.host'};
+      const mockTemplate = {type: 'object'};
 
-    it('should fetch usecase template successfully', async () => {
-      const mockMappingData = {'resolver.beckn.org': 'mapped.host'};
-      const mockTemplate = {
-        type: 'object',
-        properties: {
-          context: {type: 'object'},
-        },
+      const mockHostMappingCache = {
+        getResolverHost: jest.fn().mockResolvedValue('mapped.host'),
       };
 
-      (axios.get as jest.Mock)
-        .mockResolvedValueOnce({status: 200, data: mockMappingData})
-        .mockResolvedValueOnce({status: 200, data: mockTemplate});
+      (HostMappingCache.getInstance as jest.Mock).mockReturnValue(
+        mockHostMappingCache,
+      );
+      (axios.get as jest.Mock).mockResolvedValue({
+        status: 200,
+        data: mockTemplate,
+      });
 
       const deeplink = 'beckn://resolver.beckn.org/12345';
       const resolver = new DeeplinkResolver(deeplink);
-      const result = await resolver.fetchUsecase();
+      await resolver.fetchUsecase();
 
-      expect(result).toEqual(mockTemplate);
-    });
-
-    it('should throw error when mapping API fails', async () => {
-      (axios.get as jest.Mock).mockResolvedValueOnce({status: 500});
-
-      const deeplink = 'beckn://resolver.beckn.org/12345';
-      const resolver = new DeeplinkResolver(deeplink);
-
-      await expect(resolver.fetchUsecase()).rejects.toThrow(
-        'Failed to fetch mapping data',
+      expect(axios.get).toHaveBeenCalledWith(
+        'https://mapped.host/api/resolver/12345',
       );
     });
 
     it('should throw error when resolver API returns non-200 status', async () => {
-      const mockMappingData = {'resolver.beckn.org': 'mapped.host'};
+      const mockHostMappingCache = {
+        getResolverHost: jest.fn().mockResolvedValue('mapped.host'),
+      };
 
-      (axios.get as jest.Mock)
-        .mockResolvedValueOnce({status: 200, data: mockMappingData})
-        .mockResolvedValueOnce({status: 404});
+      (HostMappingCache.getInstance as jest.Mock).mockReturnValue(
+        mockHostMappingCache,
+      );
+      (axios.get as jest.Mock).mockResolvedValue({status: 404});
 
       const deeplink = 'beckn://resolver.beckn.org/12345';
       const resolver = new DeeplinkResolver(deeplink);
@@ -69,72 +62,64 @@ describe('DeeplinkResolver', () => {
   });
 
   describe('Integration Tests', () => {
-    beforeEach(() => {
-      jest.clearAllMocks();
-    });
-
-    it('should handle complete flow with real-like data', async () => {
-      const mockMappingData = {
-        'resolver.beckn.org': 'api.beckn.org',
-      };
-
+    it('should successfully fetch and return usecase template', async () => {
       const mockTemplate = {
         type: 'object',
         properties: {
-          context: {
-            type: 'object',
-            properties: {
-              domain: {type: 'string'},
-              action: {type: 'string'},
-              version: {type: 'string'},
-            },
-          },
+          context: {type: 'object'},
           message: {
             type: 'object',
             properties: {
-              intent: {type: 'object'},
+              data: {type: 'string'},
             },
           },
         },
       };
 
-      (axios.get as jest.Mock)
-        .mockResolvedValueOnce({status: 200, data: mockMappingData})
-        .mockResolvedValueOnce({status: 200, data: mockTemplate});
+      const mockHostMappingCache = {
+        getResolverHost: jest.fn().mockResolvedValue('mapped.host'),
+      };
 
-      const deeplink = 'beckn://resolver.beckn.org/template-123';
+      (HostMappingCache.getInstance as jest.Mock).mockReturnValue(
+        mockHostMappingCache,
+      );
+      (axios.get as jest.Mock).mockResolvedValue({
+        status: 200,
+        data: mockTemplate,
+      });
+
+      const deeplink = 'beckn://resolver.beckn.org/12345';
       const resolver = new DeeplinkResolver(deeplink);
       const result = await resolver.fetchUsecase();
 
       expect(result).toEqual(mockTemplate);
-      expect(axios.get).toHaveBeenCalledTimes(2);
+      expect(result.type).toBe('object');
+      expect(result.properties).toBeDefined();
+      expect(result.properties?.context).toBeDefined();
     });
 
-    it('should handle multiple requests using same mapping data', async () => {
-      const mockMappingData = {
-        'resolver.beckn.org': 'api.beckn.org',
+    it('should handle complex deeplink structures', async () => {
+      const mockTemplate = {type: 'object'};
+      const mockHostMappingCache = {
+        getResolverHost: jest.fn().mockResolvedValue('mapped.host'),
       };
 
-      const mockTemplate = {
-        type: 'object',
-        properties: {test: {type: 'string'}},
-      };
+      (HostMappingCache.getInstance as jest.Mock).mockReturnValue(
+        mockHostMappingCache,
+      );
+      (axios.get as jest.Mock).mockResolvedValue({
+        status: 200,
+        data: mockTemplate,
+      });
 
-      (axios.get as jest.Mock)
-        .mockResolvedValueOnce({status: 200, data: mockMappingData})
-        .mockResolvedValueOnce({status: 200, data: mockTemplate})
-        .mockResolvedValueOnce({status: 200, data: mockTemplate});
+      const deeplink = 'beckn://sub.resolver.beckn.org/12345-6789-0000';
+      const resolver = new DeeplinkResolver(deeplink);
+      const result = await resolver.fetchUsecase();
 
-      const resolver1 = new DeeplinkResolver('beckn://resolver.beckn.org/123');
-      const resolver2 = new DeeplinkResolver('beckn://resolver.beckn.org/456');
-
-      const result1 = await resolver1.fetchUsecase();
-      const result2 = await resolver2.fetchUsecase();
-
-      expect(result1).toEqual(mockTemplate);
-      expect(result2).toEqual(mockTemplate);
-      // Mapping should only be fetched once
-      expect(axios.get).toHaveBeenCalledTimes(3);
+      expect(result).toBeDefined();
+      expect(axios.get).toHaveBeenCalledWith(
+        'https://mapped.host/api/resolver/12345-6789-0000',
+      );
     });
   });
 });

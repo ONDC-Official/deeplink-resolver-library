@@ -1,6 +1,5 @@
-import * as yaml from 'js-yaml';
-import * as fs from 'fs';
 import axios from 'axios';
+import {HostMappingCache} from './HostMappingCache';
 
 export type JsonSchemaObject = {
   $schema?: string;
@@ -26,34 +25,16 @@ export type JsonSchemaObject = {
 };
 
 export class DeeplinkResolver {
-  private static resolverHostMapping: Record<string, string>;
-  private static resolverHostMappingUrl = 'www.google.com';
-  
   constructor(private deeplink: string) {}
 
-  private static async initializeMapping(): Promise<void> {
-    if (!DeeplinkResolver.resolverHostMapping) {
-      const response = await axios.get(DeeplinkResolver.resolverHostMappingUrl);
-      if (response.status === 200) {
-        DeeplinkResolver.resolverHostMapping = response.data;
-      } else {
-        throw new Error('Failed to fetch mapping data');
-      }
-    }
-  }
-
-  public static setMappingUrl(url: string): void {
-    DeeplinkResolver.resolverHostMappingUrl = url;
-  }
-
   async fetchUsecase(): Promise<JsonSchemaObject> {
-    await DeeplinkResolver.initializeMapping();
-
     const resolver = this.deeplink.split('://')[1].split('/')[0];
-    const resolverHost = resolver
+    const deeplinkHost = resolver
       .split('.')
       .slice(0, resolver.split('.').length - 2)
       .join('.');
+    const hostMappingCache = HostMappingCache.getInstance();
+    const resolverHost = await hostMappingCache.getResolverHost(deeplinkHost);
     const uuid = this.deeplink.split('://')[1].split('/')[1];
     const res = await axios.get(`https://${resolverHost}/api/resolver/${uuid}`);
     if (res.status !== 200) {
