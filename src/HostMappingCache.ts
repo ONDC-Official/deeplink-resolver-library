@@ -2,7 +2,8 @@ import axios from 'axios';
 
 export class HostMappingCache {
   private static instance: HostMappingCache;
-  private static resolverHostMappingUrl = 'www.google.com'; // CHANGE THIS
+  private static resolverHostMappingUrl =
+    'https://raw.githubusercontent.com/abhik-wil/deeplink-resolver-library/refs/heads/master/src/test_config.json'; // CHANGE THIS
   private cache: Record<string, string> | null = null;
 
   private constructor() {}
