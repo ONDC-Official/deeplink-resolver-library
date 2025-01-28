@@ -26,8 +26,29 @@ export type JsonSchemaObject = {
 };
 
 export class DeeplinkResolver {
+  private static resolverHostMapping: Record<string, string>;
+  private static resolverHostMappingUrl = 'www.google.com';
+  
   constructor(private deeplink: string) {}
+
+  private static async initializeMapping(): Promise<void> {
+    if (!DeeplinkResolver.resolverHostMapping) {
+      const response = await axios.get(DeeplinkResolver.resolverHostMappingUrl);
+      if (response.status === 200) {
+        DeeplinkResolver.resolverHostMapping = response.data;
+      } else {
+        throw new Error('Failed to fetch mapping data');
+      }
+    }
+  }
+
+  public static setMappingUrl(url: string): void {
+    DeeplinkResolver.resolverHostMappingUrl = url;
+  }
+
   async fetchUsecase(): Promise<JsonSchemaObject> {
+    await DeeplinkResolver.initializeMapping();
+
     const resolver = this.deeplink.split('://')[1].split('/')[0];
     const resolverHost = resolver
       .split('.')
