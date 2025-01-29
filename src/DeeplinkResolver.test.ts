@@ -1,4 +1,4 @@
-import {DeeplinkResolver} from './DeeplinkConsumer';
+import {DeeplinkResolver} from './DeeplinkResolver';
 import axios from 'axios';
 import {HostMappingCache} from './HostMappingCache';
 

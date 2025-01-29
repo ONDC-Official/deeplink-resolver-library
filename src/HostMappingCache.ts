@@ -2,7 +2,8 @@ import axios from 'axios';
 
 export class HostMappingCache {
   private static instance: HostMappingCache;
-  private static resolverHostMappingUrl = 'www.google.com'; // CHANGE THIS
+  private static resolverHostMappingUrl =
+    'https://raw.githubusercontent.com/abhik-wil/deeplink-resolver-library/refs/heads/master/src/test_config.json'; // CHANGE THIS
   private cache: Record<string, string> | null = null;
 
   private constructor() {}
@@ -18,7 +19,15 @@ export class HostMappingCache {
     HostMappingCache.resolverHostMappingUrl = url;
   }
 
-  async getMapping(url: string): Promise<Record<string, string>> {
+  public static getMappingUrl(): string {
+    return HostMappingCache.resolverHostMappingUrl;
+  }
+
+  async getMapping(): Promise<Record<string, string>> {
+    return this.getCustomMapping(HostMappingCache.resolverHostMappingUrl);
+  }
+
+  async getCustomMapping(url: string): Promise<Record<string, string>> {
     if (!this.cache) {
       const response = await axios.get(url);
       if (response.status === 200) {
@@ -31,7 +40,7 @@ export class HostMappingCache {
   }
 
   async getResolverHost(deeplinkHost: string): Promise<string> {
-    this.cache = await this.getMapping(HostMappingCache.resolverHostMappingUrl);
+    this.cache = await this.getMapping();
     return this.cache[deeplinkHost];
   }
 }

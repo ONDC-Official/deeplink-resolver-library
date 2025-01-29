@@ -29,14 +29,11 @@ export class DeeplinkResolver {
 
   async fetchUsecase(): Promise<JsonSchemaObject> {
     const resolver = this.deeplink.split('://')[1].split('/')[0];
-    const deeplinkHost = resolver
-      .split('.')
-      .slice(0, resolver.split('.').length - 2)
-      .join('.');
     const hostMappingCache = HostMappingCache.getInstance();
-    const resolverHost = await hostMappingCache.getResolverHost(deeplinkHost);
+    const resolverHost = await hostMappingCache.getResolverHost(resolver);
     const uuid = this.deeplink.split('://')[1].split('/')[1];
-    const res = await axios.get(`https://${resolverHost}/api/resolver/${uuid}`);
+
+    const res = await axios.get(`${resolverHost}/${uuid}`);
     if (res.status !== 200) {
       throw new Error('Error fetching usecase template');
     }
