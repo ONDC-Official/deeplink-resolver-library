@@ -3,7 +3,7 @@ import axios from 'axios';
 export class HostMappingCache {
   private static instance: HostMappingCache;
   private static resolverHostMappingUrl =
-    'https://raw.githubusercontent.com/abhik-wil/deeplink-resolver-library/refs/heads/master/src/test_config.json'; // CHANGE THIS
+    'https://raw.githubusercontent.com/ONDC-Official/deeplink-host-config/refs/heads/master/host_mapping.json';
   private cache: Record<string, string> | null = null;
 
   private constructor() {}
